@@ -6,13 +6,13 @@ import gzip
 import io
 import os
 import signal
-import sqlite3
 import stat
 import time
 import threading
 
 from beaver.utils import IS_GZIPPED_FILE, REOPEN_FILES, eglob, multiline_merge
 from beaver.unicode_dammit import ENCODINGS
+from beaver.sincedb_manager import SinceDBManager
 
 
 class Worker(object):
@@ -55,6 +55,7 @@ class Worker(object):
         self._logger = logger
         self._proc = None
         self._sincedb_path = self._beaver_config.get('sincedb_path')
+        self._sincedb_manager = SinceDBManager(self._sincedb_path)
         self._update_time = None
         self._running = True
 
@@ -74,7 +75,8 @@ class Worker(object):
         """Closes all currently open file pointers"""
         for id, data in self._file_map.iteritems():
             data['file'].close()
-            self._sincedb_update_position(data['file'], fid=id, force_update=True)
+            # move this to transport layer to prevent in-queue log drop
+            # self._sincedb_update_position(data['file'], fid=id, force_update=True)
         self._file_map.clear()
         if self._proc is not None and self._proc.is_alive():
             self._proc.terminate()
@@ -148,7 +150,7 @@ class Worker(object):
                 if self._file_map[fid]['current_event'] and time.time() - self._file_map[fid]['last_activity'] > 1:
                     event = '\n'.join(self._file_map[fid]['current_event'])
                     self._file_map[fid]['current_event'].clear()
-                    self._callback_wrapper(filename=file.name, lines=[event])
+                    self._callback_wrapper(filename=file.name, lines=[event], offset=self._file_map[fid]['line'])
                 break
 
             self._file_map[fid]['last_activity'] = time.time()
@@ -164,13 +166,8 @@ class Worker(object):
                 events = lines
 
             if events:
-                self._callback_wrapper(filename=file.name, lines=events)
+                self._callback_wrapper(filename=file.name, lines=events, offset=self._file_map[fid]['line'])
 
-            if self._sincedb_path:
-                current_line_count = len(lines)
-                self._sincedb_update_position(file, fid=fid, lines=current_line_count)
-
-        self._sincedb_update_position(file, fid=fid)
 
     def _buffer_extract(self, data, fid):
         """
@@ -313,7 +310,7 @@ class Worker(object):
 
             current_position = data['file'].tell()
             self._logger.debug("[{0}] - line count {1} for {2}".format(fid, line_count, data['file'].name))
-            self._sincedb_update_position(data['file'], fid=fid, lines=line_count, force_update=True)
+
             # Reset this, so line added processed just after this initialization
             # will update the sincedb. Without this, if beaver run for less than
             # sincedb_write_interval it will always re-process the last lines.
@@ -335,11 +332,11 @@ class Worker(object):
                                 self._file_map[fid]['multiline_regex_before'])
                     else:
                         events = lines
-                    self._callback_wrapper(filename=data['file'].name, lines=events)
+                    self._callback_wrapper(filename=data['file'].name, lines=events, offset=line_count)
 
         self.unwatch_list(unwatch_list)
 
-    def _callback_wrapper(self, filename, lines):
+    def _callback_wrapper(self, filename, lines, offset=None):
         now = datetime.datetime.utcnow()
         timestamp = now.strftime("%Y-%m-%dT%H:%M:%S") + ".%03d" % (now.microsecond / 1000) + "Z"
         self._callback(('callback', {
@@ -351,28 +348,17 @@ class Worker(object):
             'timestamp': timestamp,
             'tags': self._beaver_config.get_field('tags', filename),
             'type': self._beaver_config.get_field('type', filename),
+            'offset' : offset,
         }))
 
-    def _sincedb_init(self):
-        """Initializes the sincedb schema in an sqlite db"""
-        if not self._sincedb_path:
-            return
-
-        if not os.path.exists(self._sincedb_path):
-            self._logger.debug('Initializing sincedb sqlite schema')
-            conn = sqlite3.connect(self._sincedb_path, isolation_level=None)
-            conn.execute("""
-            create table sincedb (
-                fid      text primary key,
-                filename text,
-                position integer default 1
-            );
-            """)
-            conn.close()
+    def _sincedb_start_position(self, file, fid=None):
+        """Retrieves the starting position from the sincedb sql db
+        for a given file
+        """
+        return self._sincedb_manager.sincedb_start_position(file, fid)
 
     def _sincedb_update_position(self, file, fid=None, lines=0, force_update=False):
-        """Retrieves the starting position from the sincedb sql db for a given file
-        Returns a boolean representing whether or not it updated the record
+        """Record all checkpoint info in memory, only sync in transport layer
         """
         if not self._sincedb_path:
             return False
@@ -394,55 +380,13 @@ class Worker(object):
             if old_count == lines:
                 return False
 
-        self._sincedb_init()
-
         self._file_map[fid]['update_time'] = current_time
 
         self._logger.debug("[{0}] - updating sincedb for logfile {1} from {2} to {3}".format(fid, file.name, old_count, lines))
 
-        conn = sqlite3.connect(self._sincedb_path, isolation_level=None)
-        cursor = conn.cursor()
-        query = "insert or ignore into sincedb (fid, filename) values (:fid, :filename);"
-        cursor.execute(query, {
-            'fid': fid,
-            'filename': file.name
-        })
-
-        query = "update sincedb set position = :position where fid = :fid and filename = :filename"
-        cursor.execute(query, {
-            'fid': fid,
-            'filename': file.name,
-            'position': int(lines),
-        })
-        conn.close()
-
         self._file_map[fid]['line_in_sincedb'] = lines
 
         return True
-
-    def _sincedb_start_position(self, file, fid=None):
-        """Retrieves the starting position from the sincedb sql db
-        for a given file
-        """
-        if not self._sincedb_path:
-            return None
-
-        if not fid:
-            fid = self.get_file_id(os.stat(file.name))
-
-        self._sincedb_init()
-        conn = sqlite3.connect(self._sincedb_path, isolation_level=None)
-        cursor = conn.cursor()
-        cursor.execute("select position from sincedb where fid = :fid and filename = :filename", {
-            'fid': fid,
-            'filename': file.name
-        })
-
-        start_position = None
-        for row in cursor.fetchall():
-            start_position, = row
-
-        return start_position
 
     def update_files(self):
         """Ensures all files are properly loaded.
@@ -560,7 +504,7 @@ class Worker(object):
                 if self._file_map[fid]['current_event']:
                     event = '\n'.join(self._file_map[fid]['current_event'])
                     self._file_map[fid]['current_event'].clear()
-                    self._callback_wrapper(filename=file.name, lines=[event])
+                    self._callback_wrapper(filename=file.name, lines=[event], offset=self._file_map[fid]['line'])
         except IOError:
             # Silently ignore any IOErrors -- file is gone
             pass

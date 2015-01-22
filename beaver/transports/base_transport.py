@@ -16,6 +16,7 @@ try:
 except ImportError:
     import msgpack_pure as msgpack
 
+from beaver.sincedb_manager import SinceDBManager
 
 class BaseTransport(object):
 
@@ -31,6 +32,9 @@ class BaseTransport(object):
         self._formatters = {}
         self._is_valid = True
         self._logger = logger
+        # add sincedb sync
+        self._sincedb_path = self._beaver_config.get('sincedb_path')
+        self._sincedb_manager = SinceDBManager(self._sincedb_path)
 
         self._logstash_version = beaver_config.get('logstash_version')
         if self._logstash_version == 0:
@@ -149,3 +153,9 @@ class BaseTransport(object):
     def valid(self):
         """Returns whether or not the transport can send data"""
         return self._is_valid
+
+    def checkpoint(self, filename, processed_lines):
+        """Returns whether or not the transport can send data"""
+        if processed_lines：
+            return self._sincedb_manager.sincedb_update_position(file=filename, lines=processed_lines)
+        return True

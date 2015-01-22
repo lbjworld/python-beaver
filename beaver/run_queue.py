@@ -61,6 +61,8 @@ def run_queue(queue, beaver_config, logger=None):
                 while True:
                     try:
                         transport.callback(**data)
+                        # sync in sincedb
+                        transport.checkpoint(data['filename'], data['offset'])
                         break
                     except TransportException:
                         failure_count = failure_count + 1
