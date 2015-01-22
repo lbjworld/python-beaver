@@ -255,8 +255,6 @@ class Worker(object):
             if self._sincedb_path:
                 sincedb_start_position = self._sincedb_start_position(data['file'], fid=fid)
                 if sincedb_start_position:
-                    # load init start position from sincedb
-                    self._file_map[fid]['line'] = sincedb_start_position
                     start_position = sincedb_start_position
 
             if start_position == "beginning":
@@ -318,6 +316,8 @@ class Worker(object):
 
             current_position = data['file'].tell()
             self._logger.debug("[{0}] - line count {1} for {2}".format(fid, line_count, data['file'].name))
+            # set init start position
+            self._file_map[fid]['line'] = line_count
 
             # Reset this, so line added processed just after this initialization
             # will update the sincedb. Without this, if beaver run for less than
