@@ -255,6 +255,8 @@ class Worker(object):
             if self._sincedb_path:
                 sincedb_start_position = self._sincedb_start_position(data['file'], fid=fid)
                 if sincedb_start_position:
+                    # load init start position from sincedb
+                    self._file_map[fid]['line'] = sincedb_start_position
                     start_position = sincedb_start_position
 
             if start_position == "beginning":
@@ -388,7 +390,7 @@ class Worker(object):
 
         self._file_map[fid]['update_time'] = current_time
 
-        self._logger.debug("[{0}] - updating sincedb for logfile {1} from {2} to {3}".format(fid, file.name, old_count, lines))
+        self._logger.debug("[{0}] - updating position in memory for logfile {1} pos {2}".format(fid, file.name, lines))
 
         self._file_map[fid]['line_in_sincedb'] = lines
 
