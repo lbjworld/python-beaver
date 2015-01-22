@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import os
 import sqlite3
 
 # since db manager
@@ -10,7 +11,6 @@ class SinceDBManager:
         self._sincedb_path = sincedb_path
         self._logger = logger
 
-    @classmethod
     def sincedb_init(self):
         """Initializes the sincedb schema in an sqlite db"""
         if not self._sincedb_path:
@@ -28,8 +28,7 @@ class SinceDBManager:
             """)
             conn.close()
 
-    @classmethod
-    def sincedb_update_position(self, file, fid=None, lines=0):
+    def sincedb_update_position(self, filename, fid=None, lines=0):
         """Retrieves the starting position from the sincedb sql db for a given file
         Returns a boolean representing whether or not it updated the record
         """
@@ -37,7 +36,7 @@ class SinceDBManager:
             return False
 
         if not fid:
-            fid = self.get_file_id(os.stat(file.name))
+            fid = self.get_file_id(os.stat(filename))
 
         self.sincedb_init()
 
@@ -46,16 +45,18 @@ class SinceDBManager:
         query = "insert or ignore into sincedb (fid, filename) values (:fid, :filename);"
         cursor.execute(query, {
             'fid': fid,
-            'filename': file.name
+            'filename': filename
         })
 
         query = "update sincedb set position = :position where fid = :fid and filename = :filename"
         cursor.execute(query, {
             'fid': fid,
-            'filename': file.name,
+            'filename': filename,
             'position': int(lines),
         })
         conn.close()
+
+        self._logger.debug("[{0}] - updated sincedb for logfile {1} pos {2}".format(fid, filename, int(lines)))
 
         return True
 
@@ -64,7 +65,6 @@ class SinceDBManager:
         return "%xg%x" % (st.st_dev, st.st_ino)
 
 
-    @classmethod
     def sincedb_start_position(self, file, fid=None):
         """Retrieves the starting position from the sincedb sql db
         for a given file
@@ -75,7 +75,7 @@ class SinceDBManager:
         if not fid:
             fid = self.get_file_id(os.stat(file.name))
 
-        self._sincedb_init()
+        self.sincedb_init()
         conn = sqlite3.connect(self._sincedb_path, isolation_level=None)
         cursor = conn.cursor()
         cursor.execute("select position from sincedb where fid = :fid and filename = :filename", {
@@ -86,6 +86,8 @@ class SinceDBManager:
         start_position = None
         for row in cursor.fetchall():
             start_position, = row
+
+        self._logger.debug("[{0}] - get start pos from sincedb for logfile {1} pos {2}".format(fid, file.name, start_position))
 
         return start_position
 

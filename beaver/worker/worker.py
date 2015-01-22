@@ -55,7 +55,7 @@ class Worker(object):
         self._logger = logger
         self._proc = None
         self._sincedb_path = self._beaver_config.get('sincedb_path')
-        self._sincedb_manager = SinceDBManager(self._sincedb_path)
+        self._sincedb_manager = SinceDBManager(self._sincedb_path, logger)
         self._update_time = None
         self._running = True
 

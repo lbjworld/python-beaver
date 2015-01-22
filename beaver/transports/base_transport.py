@@ -34,7 +34,7 @@ class BaseTransport(object):
         self._logger = logger
         # add sincedb sync
         self._sincedb_path = self._beaver_config.get('sincedb_path')
-        self._sincedb_manager = SinceDBManager(self._sincedb_path)
+        self._sincedb_manager = SinceDBManager(self._sincedb_path, logger)
 
         self._logstash_version = beaver_config.get('logstash_version')
         if self._logstash_version == 0:
@@ -156,6 +156,6 @@ class BaseTransport(object):
 
     def checkpoint(self, filename, processed_lines):
         """Returns whether or not the transport can send data"""
-        if processed_lines：
-            return self._sincedb_manager.sincedb_update_position(file=filename, lines=processed_lines)
+        if processed_lines:
+            return self._sincedb_manager.sincedb_update_position(filename=filename, lines=processed_lines)
         return True
