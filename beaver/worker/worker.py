@@ -168,6 +168,12 @@ class Worker(object):
             if events:
                 self._callback_wrapper(filename=file.name, lines=events, offset=self._file_map[fid]['line'])
 
+            if self._sincedb_path:
+                current_line_count = len(lines)
+                self._sincedb_update_position(file, fid=fid, lines=current_line_count)
+
+        self._sincedb_update_position(file, fid=fid)
+
 
     def _buffer_extract(self, data, fid):
         """
