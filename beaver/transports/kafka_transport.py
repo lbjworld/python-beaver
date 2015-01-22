@@ -77,6 +77,7 @@ class KafkaTransport(BaseTransport):
     def interrupt(self):
         if self._client:
             self._client.close()
+            self._client = None
 
     def reconnect(self):
         self._connect()
