@@ -78,6 +78,15 @@ Beaver can optionally get data from a ``configfile`` using the ``-c`` flag. This
 * zeromq_hwm: Default None. Zeromq HighWaterMark socket option
 * zeromq_bind: Default ``bind``. Whether to bind to zeromq host or simply connect
 * http_url: Default ``None`` http://someserver.com/path
+* kafka_host: Default ``127.0.0.1``.
+* kafka_port: ``9092``.
+* kafka_async: ``0``. Turn off async mode
+* kafka_delivery_mode: Default ``ack_after_local_write``.
+* kafka_ack_timeout: Default ``2000``.
+* kafka_batch_send: Default ``1``.
+* kafka_batch_send_every_n: Default ``60``.
+* kafka_batch_send_every_t: Default ``60``.
+
 
 The following are used for instances when a TransportException is thrown - Transport dependent
 
