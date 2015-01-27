@@ -5,6 +5,7 @@ Beaver
 ======
 
 python daemon that munches on logs and sends their contents to logstash
+fork from josegonzalez/python-beaver, many thanks to all the contributors.
 
 Requirements
 ============
@@ -19,7 +20,7 @@ Using PIP:
 
 From Github::
 
-    pip install git+git://github.com/josegonzalez/python-beaver.git@33.0.0#egg=beaver
+    pip install git+git://github.com/lbjworld/python-beaver.git@33.0.0#egg=beaver
 
 From PyPI::
 
@@ -36,7 +37,7 @@ You can also build the docs locally:
     pip install sphinx
 
     # retrieve the repository
-    git clone git://github.com/josegonzalez/beaver.git
+    git clone git://github.com/lbjworld/beaver.git
 
     # build the html output
     cd beaver/docs
