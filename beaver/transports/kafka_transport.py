@@ -40,7 +40,7 @@ class KafkaTransport(BaseTransport):
         # Setup Kafka producer
         self._client = KafkaClient("{host}:{port}".format(host=self._kafka_config['host'], port=self._kafka_config['port']))
         self._producer = SimpleProducer(self._client, async=self._kafka_config.get('async', False),
-                                        req_acks=DELIVERY_MODE.get(self._kafka_config['delivery_mode'], SimpleProducer.ACK_AFTER_LOCAL_WRITE),
+                                        req_acks=self.DELIVERY_MODE.get(self._kafka_config['delivery_mode'], SimpleProducer.ACK_AFTER_LOCAL_WRITE),
                                         ack_timeout=self._kafka_config.get('ack_timeout', 2000),
                                         batch_send=self._kafka_config.get('batch_send', True),
                                         batch_send_every_n=self._kafka_config.get('batch_send_every_n', 60),
