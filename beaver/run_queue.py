@@ -15,6 +15,7 @@ def run_queue(queue, beaver_config, logger=None):
     signal.signal(signal.SIGQUIT, signal.SIG_DFL)
 
     last_update_time = int(time.time())
+    last_checkpoint_time = 0
     queue_timeout = beaver_config.get('queue_timeout')
     wait_timeout = beaver_config.get('wait_timeout')
 
@@ -62,7 +63,12 @@ def run_queue(queue, beaver_config, logger=None):
                     try:
                         transport.callback(**data)
                         # sync in sincedb
-                        transport.checkpoint(data['filename'], data['offset'])
+                        if data.get('filename') and data.get('offset'):
+                            sincedb_write_interval = self.beaver_config.get_field('sincedb_write_interval', data['filename'])
+                            if last_update_time - last_checkpoint_time > sincedb_write_interval:
+                                transport.checkpoint(data['filename'], data['offset'])
+                                last_checkpoint_time = last_update_time
+                                logger.info('Write checkpoint({file}, {offset}) into sincedb'.format(file=data['filename'], offset=data['offset']))
                         break
                     except TransportException:
                         failure_count = failure_count + 1
