@@ -8,14 +8,37 @@ from beaver.transports import create_transport
 from beaver.transports.exception import TransportException
 from unicode_dammit import unicode_dammit
 
+class ChkPtMgr:
+    def __init__(self, beaver_config):
+        self._file_chkpt = dict()
+        self._beaver_config = beaver_config
+
+    def need_do_checkpoint(self, filename, last_update_time):
+        if not self._file_chkpt.get(filename):
+            sincedb_write_interval = self._beaver_config.get_field('sincedb_write_interval', filename)
+            self._file_chkpt[filename] = (0, sincedb_write_interval)
+            return True
+        last_checkpoint_time, sincedb_write_interval = self._file_chkpt[filename]
+        if last_update_time - last_checkpoint_time > sincedb_write_interval:
+            return True
+        return False
+
+    def update_checkpoint_time(self, filename, new_update_time):
+        if self._file_chkpt.get(filename):
+            _, sincedb_write_interval = self._file_chkpt[filename]
+            self._file_chkpt[filename] = (new_update_time, sincedb_write_interval)
+
+
 
 def run_queue(queue, beaver_config, logger=None):
     signal.signal(signal.SIGTERM, signal.SIG_DFL)
     signal.signal(signal.SIGINT, signal.SIG_DFL)
     signal.signal(signal.SIGQUIT, signal.SIG_DFL)
 
+    # record all checkpoints of files
+    chkpt_mgr = ChkPtMgr(beaver_config)
+
     last_update_time = int(time.time())
-    last_checkpoint_time = 0
     queue_timeout = beaver_config.get('queue_timeout')
     wait_timeout = beaver_config.get('wait_timeout')
 
@@ -63,12 +86,10 @@ def run_queue(queue, beaver_config, logger=None):
                     try:
                         transport.callback(**data)
                         # sync in sincedb
-                        if data.get('filename') and data.get('offset'):
-                            sincedb_write_interval = beaver_config.get_field('sincedb_write_interval', data['filename'])
-                            if last_update_time - last_checkpoint_time > sincedb_write_interval:
-                                transport.checkpoint(data['filename'], data['offset'])
-                                last_checkpoint_time = last_update_time
-                                logger.info('Write checkpoint({file}, {offset}) into sincedb'.format(file=data['filename'], offset=data['offset']))
+                        if data.get('filename') and data.get('offset') and chkpt_mgr.need_do_checkpoint(data['filename'], last_update_time):
+                            transport.checkpoint(data['filename'], data['offset'])
+                            chkpt_mgr.update_checkpoint_time(data['filename'], last_update_time)
+                            logger.info('Write checkpoint({file}, {offset}) into sincedb'.format(file=data['filename'], offset=data['offset']))
                         break
                     except TransportException:
                         failure_count = failure_count + 1
