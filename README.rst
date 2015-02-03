@@ -20,7 +20,7 @@ Using PIP:
 
 From Github::
 
-    pip install git+git://github.com/lbjworld/python-beaver.git@33.0.0#egg=beaver
+    pip install git+git://github.com/lbjworld/python-beaver.git
 
 From PyPI::
 
