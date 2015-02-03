@@ -64,7 +64,7 @@ def run_queue(queue, beaver_config, logger=None):
                         transport.callback(**data)
                         # sync in sincedb
                         if data.get('filename') and data.get('offset'):
-                            sincedb_write_interval = self.beaver_config.get_field('sincedb_write_interval', data['filename'])
+                            sincedb_write_interval = beaver_config.get_field('sincedb_write_interval', data['filename'])
                             if last_update_time - last_checkpoint_time > sincedb_write_interval:
                                 transport.checkpoint(data['filename'], data['offset'])
                                 last_checkpoint_time = last_update_time
