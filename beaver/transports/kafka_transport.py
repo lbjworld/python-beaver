@@ -19,7 +19,7 @@ class KafkaTransport(BaseTransport):
         self._kafka_config = {}
         config_to_store = [
             'host', 'port', 'delivery_mode', 'ack_timeout', 'async', 'topic', 
-            'batch_send', 'batch_send_every_n', 'batch_send_every_t'
+            'batch_send', 'batch_send_every_n', 'batch_send_every_t', 'codec'
         ]
 
         for key in config_to_store:
@@ -41,7 +41,8 @@ class KafkaTransport(BaseTransport):
         self._client = KafkaClient("{host}:{port}".format(host=self._kafka_config['host'], port=self._kafka_config['port']))
         self._producer = SimpleProducer(self._client, async=self._kafka_config.get('async', False),
                                         req_acks=self.DELIVERY_MODE.get(self._kafka_config['delivery_mode'], SimpleProducer.ACK_AFTER_LOCAL_WRITE),
-                                        ack_timeout=self._kafka_config.get('ack_timeout', 2000),
+                                        # ack_timeout=self._kafka_config.get('ack_timeout', 2000),
+                                        codec=self._kafka_config.get('codec', 0),
                                         batch_send=self._kafka_config.get('batch_send', True),
                                         batch_send_every_n=self._kafka_config.get('batch_send_every_n', 60),
                                         batch_send_every_t=self._kafka_config.get('batch_send_every_t', 60)
