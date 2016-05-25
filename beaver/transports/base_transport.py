@@ -35,6 +35,7 @@ class BaseTransport(object):
         # add sincedb sync
         self._sincedb_path = self._beaver_config.get('sincedb_path')
         self._sincedb_manager = SinceDBManager(self._sincedb_path, logger)
+        self._epoch = datetime.datetime.utcfromtimestamp(0)
 
         self._logstash_version = beaver_config.get('logstash_version')
         if self._logstash_version == 0:
@@ -65,8 +66,8 @@ class BaseTransport(object):
             except ValueError:
                 self._logger.warning("cannot parse as rawjson: {0}".format(self._fields.get('message')))
                 json_data = json.loads("{}")
-
-            del data[self._fields.get('message')]
+            if json_data:
+                del data[self._fields.get('message')]
 
             for field in json_data:
                 data[field] = json_data[field]
@@ -77,6 +78,28 @@ class BaseTransport(object):
 
             return json.dumps(data)
 
+        def gelf_formatter(data):
+            message = data[self._fields.get('message')]
+            short_message = message.split('\n', 1)[0]
+            short_message = short_message[:250]
+
+            timestampDate = datetime.datetime.strptime(data['@timestamp'], "%Y-%m-%dT%H:%M:%S.%fZ")
+
+            delta = timestampDate - self._epoch
+            timestampSeconds = delta.days*86400+delta.seconds+delta.microseconds/1e6
+
+            gelf_data = {
+                'version': '1.1',
+                'host': data[self._fields.get('host')],
+                'short_message': short_message,
+                'full_message': message,
+                'timestamp': timestampSeconds,
+                'level': 6,
+                '_file': data[self._fields.get('file')],
+            }
+
+            return json.dumps(gelf_data) + '\0'
+
         def string_formatter(data):
             return '[{0}] [{1}] {2}'.format(data[self._fields.get('host')], data['@timestamp'], data[self._fields.get('message')])
 
@@ -85,6 +108,7 @@ class BaseTransport(object):
         self._formatters['raw'] = raw_formatter
         self._formatters['rawjson'] = rawjson_formatter
         self._formatters['string'] = string_formatter
+        self._formatters['gelf'] = gelf_formatter
 
     def addglob(self, globname, globbed):
         """Adds a set of globbed files to the attached beaver_config"""
@@ -96,6 +120,7 @@ class BaseTransport(object):
 
     def format(self, filename, line, timestamp, **kwargs):
         """Returns a formatted log line"""
+        line = unicode(line.encode("utf-8")[:32766], "utf-8", errors="ignore")
         formatter = self._beaver_config.get_field('format', filename)
         if formatter not in self._formatters:
             formatter = self._default_formatter

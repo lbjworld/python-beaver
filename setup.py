@@ -64,7 +64,7 @@ setup(
         'beaver.worker'
     ],
     scripts=['bin/beaver'],
-    url='http://github.com/josegonzalez/beaver',
+    url='http://github.com/python-beaver/python-beaver',
     license='LICENSE.txt',
     classifiers=[
         'Development Status :: 5 - Production/Stable',
@@ -79,5 +79,5 @@ setup(
                 open('CHANGES.rst').read(),
     tests_require=open('requirements/tests.txt').readlines(),
     test_suite='nose.collector',
-    install_requires=requirements,
+    install_requires=requirements, requires=['six']
 )

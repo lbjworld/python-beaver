@@ -53,7 +53,17 @@ class BeaverConfig():
         }
 
         self._main_defaults = {
-            'mqtt_clientid': 'mosquitto',
+            'kafka_client_id': os.environ.get('KAFKA_CLIENT_ID', 'beaver-kafka'),
+            'kafka_hosts': os.environ.get('KAFKA_HOSTS', 'localhost:9092'),
+            'kafka_async': os.environ.get('KAFKA_ASYNC', True),
+            'kafka_topic': os.environ.get('KAFKA_TOPIC', 'logstash-topic'),
+            'kafka_key': os.environ.get('KAFKA_KEY'),
+            'kafka_codec': os.environ.get('KAFKA_CODEC'),
+            'kafka_ack_timeout': os.environ.get('KAFKA_ACK_TIMEOUT', 2000),
+            'kafka_batch_n': os.environ.get('KAFKA_BATCH_N', 10),
+            'kafka_batch_t': os.environ.get('KAFKA_BATCH_T', 10),
+            'kafka_round_robin': os.environ.get('KAFKA_ROUND_ROBIN', False),
+            'mqtt_clientid': 'paho',
             'mqtt_host': 'localhost',
             'mqtt_port': '1883',
             'mqtt_topic': '/logstash',
@@ -74,29 +84,53 @@ class BeaverConfig():
             'rabbitmq_ha_queue': os.environ.get('RABBITMQ_HA_QUEUE', '0'),
             'rabbitmq_key': os.environ.get('RABBITMQ_KEY', 'logstash-key'),
             'rabbitmq_exchange': os.environ.get('RABBITMQ_EXCHANGE', 'logstash-exchange'),
+            'rabbitmq_timeout': '1',
             'rabbitmq_delivery_mode': 1,
             'redis_url': os.environ.get('REDIS_URL', 'redis://localhost:6379/0'),
             'redis_namespace': os.environ.get('REDIS_NAMESPACE', 'logstash:beaver'),
+            'redis_data_type': os.environ.get('REDIS_DATA_TYPE', 'list'),
             'redis_password': '',
+            'sns_aws_access_key': '',
+            'sns_aws_secret_key': '',
+            'sns_aws_profile_name': '',
+            'sns_aws_region': 'us-east-1',
+            'sns_aws_topic_arn': '',
             'sqs_aws_access_key': '',
             'sqs_aws_secret_key': '',
+            'sqs_aws_profile_name': '',
             'sqs_aws_region': 'us-east-1',
             'sqs_aws_queue': '',
+            'sqs_aws_queue_owner_acct_id': '',
+            'sqs_bulk_lines': False,
+            'kinesis_aws_access_key': '', 
+            'kinesis_aws_secret_key': '', 
+            'kinesis_aws_region': 'us-east-1', 
+            'kinesis_aws_stream': '', 
+            'kinesis_aws_batch_size_max': '512000',
             'tcp_host': '127.0.0.1',
             'tcp_port': '9999',
             'tcp_ssl_enabled': '0',
             'tcp_ssl_verify': '0',
             'tcp_ssl_cacert': '',
             'tcp_ssl_cert': '',
+            'tcp_ssl_key':'',
             'udp_host': os.environ.get('UDP_HOST', '127.0.0.1'),
             'udp_port': os.environ.get('UDP_PORT', '9999'),
             'zeromq_address': os.environ.get('ZEROMQ_ADDRESS', 'tcp://localhost:2120'),
             'zeromq_pattern': 'push',
             'zeromq_hwm': os.environ.get('ZEROMQ_HWM', ''),
+            'stomp_host' : 'localhost',
+            'stomp_port' : '61613',
+            'stomp_user' : 'user',
+            'stomp_password' : None,
+            'stomp_queue' : 'queue/logstash',
 
             # exponential backoff
             'respawn_delay': '3',
             'max_failure': '7',
+
+            # consumer processes
+            'number_of_consumer_processes': '1',
 
             # interprocess queue max size before puts block
             'max_queue_size': '100',
@@ -148,6 +182,9 @@ class BeaverConfig():
             'debug': '0',
             'daemonize': '0',
             'pid': '',
+
+            # Ignore files older then n days, use 0 to disable
+            'ignore_old_files': 0
         }
 
         self._configfile = args.config
@@ -280,6 +317,7 @@ class BeaverConfig():
                 'max_queue_size',
                 'queue_timeout',
                 'rabbitmq_port',
+                'rabbitmq_timeout',
                 'rabbitmq_delivery_mode',
                 'respawn_delay',
                 'subprocess_poll_sleep',
@@ -289,6 +327,11 @@ class BeaverConfig():
                 'wait_timeout',
                 'zeromq_hwm',
                 'logstash_version',
+                'kafka_batch_n',
+                'kafka_batch_t',
+                'kafka_ack_timeout',
+                'number_of_consumer_processes',
+                'ignore_old_files'
             ]
             for key in require_int:
                 if config[key] is not None:

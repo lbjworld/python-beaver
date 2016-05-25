@@ -10,7 +10,7 @@ usage::
     beaver [-h] [-c CONFIG] [-C CONFD_PATH] [-d] [-D] [-f FILES [FILES ...]]
            [-F {json,msgpack,raw,rawjson,string}] [-H HOSTNAME] [-m {bind,connect}]
            [-l OUTPUT] [-p PATH] [-P PID]
-           [-t {mqtt,rabbitmq,redis,sqs,stdout,tcp,udp,zmq}] [-v] [--fqdn]
+           [-t {kafka,mqtt,rabbitmq,redis,sns,sqs,kinesis,stdout,tcp,udp,zmq,stomp}] [-v] [--fqdn]
 
 optional arguments::
 
@@ -23,7 +23,7 @@ optional arguments::
     -f FILES [FILES ...], --files FILES [FILES ...]
                           space-separated filelist to watch, can include globs
                           (*.log). Overrides --path argument
-    -F {json,msgpack,raw,rawjson,string}, --format {json,msgpack,raw,rawjson,string}
+    -F {json,msgpack,raw,rawjson,string,gelf}, --format {json,msgpack,raw,rawjson,string,gelf}
                           format to use when sending to transport
     -H HOSTNAME, --hostname HOSTNAME
                           manual hostname override for source_host
@@ -33,7 +33,7 @@ optional arguments::
                           file to pipe output to (in addition to stdout)
     -p PATH, --path PATH  path to log files
     -P PID, --pid PID     path to pid file
-    -t {mqtt,rabbitmq,redis,stdout,tcp,udp,zmq}, --transport {mqtt,rabbitmq,redis,sqs,stdout,tcp,udp,zmq}
+    -t {kafka,mqtt,rabbitmq,redis,sns,sqs,kinesis,stdout,tcp,udp,zmq,stomp}, --transport {kafka,mqtt,rabbitmq,redis,sns,sqs,kinesis,stdout,tcp,udp,zmq,stomp}
                           log transport method
     -v, --version         output version and quit
     --fqdn                use the machine's FQDN for source_host
@@ -43,9 +43,18 @@ Configuration File Options
 
 Beaver can optionally get data from a ``configfile`` using the ``-c`` flag. This file is in ``ini`` format. Global configuration will be under the ``beaver`` stanza. The following are global beaver configuration keys with their respective meanings:
 
+* kafka_client_id: Default ``beaver-kafka``. Kafka client id
+* kafka_hosts: Default ``localhost:9092``. Seed list of hosts (host:port)separated by commas for kafka cluster
+* kafka_async: Default ``True``.
+* kafka_topic: Default ``logstash-topic``
+* kafka_key: Optional. Defaults ``None``. Target specific partition
+* kafka_codec: Optional. Defaults ``None``. GZIP supported with 0x01. SNAPPY requires to install python-snappy anbd use codec = 0x02
+* kafka_ack_timeout: Default ``2000``. Acknowledge timeout
+* kafka_batch_n: Default ``10``. Batch log message size
+* kafka_batch_t: Default ``10``. Batch log message timeout
 * mqtt_host: Default ``localhost``. Host for mosquitto
 * mqtt_port: Default ``1883``. Port for mosquitto
-* mqtt_clientid: Default ``mosquitto``. Mosquitto client id
+* mqtt_clientid: Default ``paho``. Paho client id
 * mqtt_keepalive: Default ``60``. mqtt keepalive ping
 * mqtt_topic: Default ``/logstash``. Topic to publish to
 * rabbitmq_host: Defaults ``localhost``. Host for RabbitMQ
@@ -63,35 +72,52 @@ Beaver can optionally get data from a ``configfile`` using the ``-c`` flag. This
 * rabbitmq_exchange_durable: Default ``0``.
 * rabbitmq_key: Default ``logstash-key``.
 * rabbitmq_exchange: Default ``logstash-exchange``.
+* rabbitmq_timeout: Default ``1``. The timeout in seconds for the connection to the RabbitMQ broker
 * rabbitmq_delivery_mode: Default ``1``. Message deliveryMode. 1: non persistent 2: persistent
-* redis_url: Default ``redis://localhost:6379/0``. Redis URL
+* redis_url: Default ``redis://localhost:6379/0``. Comma separated redis URLs
 * redis_namespace: Default ``logstash:beaver``. Redis key namespace
+* redis_data_type: Default ``list``, but can also be ``channel``. Redis data type used for transporting log messages
+* sns_aws_access_key: Can be left blank to use IAM Roles or AWS_ACCESS_KEY_ID environment variable (see: https://github.com/boto/boto#getting-started-with-boto)
+* sns_aws_secret_key: Can be left blank to use IAM Roles or AWS_SECRET_ACCESS_KEY environment variable (see: https://github.com/boto/boto#getting-started-with-boto)
+* sns_aws_profile_name: Can be left blank to use IAM Roles AWS_SECRET_ACCESS_KEY environment variable, or fixed keypair (above) (see: https://github.com/boto/boto#getting-started-with-boto)
+* sns_aws_region: Default ``us-east-1``. AWS Region
+* sns_aws_topic_arn: Topic ARN (must exist)
 * sqs_aws_access_key: Can be left blank to use IAM Roles or AWS_ACCESS_KEY_ID environment variable (see: https://github.com/boto/boto#getting-started-with-boto)
 * sqs_aws_secret_key: Can be left blank to use IAM Roles or AWS_SECRET_ACCESS_KEY environment variable (see: https://github.com/boto/boto#getting-started-with-boto)
+* sqs_aws_profile_name: Can be left blank to use IAM Roles AWS_SECRET_ACCESS_KEY environment variable, or fixed keypair (above) (see: https://github.com/boto/boto#getting-started-with-boto)
 * sqs_aws_region: Default ``us-east-1``. AWS Region
-* sqs_aws_queue: SQS queue (must exist)
+* sqs_aws_queue: SQS queue, or comma delimited list of queues (must exist)
+* sqs_aws_queue_owner_acct_id: Optional. Defaults ``None``. Account ID or Principal allowed to write to queue
+* sqs_bulk_lines: Optional. Send multiple log entries in a single SQS message (cost saving benefit on larger environments)
+* kinesis_aws_access_key: Can be left blank to use IAM roles or AWS_ACCESS_KEY_ID environment variable (see: https://github.com/boto/boto#getting-started-with-boto)
+* kinesis_aws_secret_key: Can be left blank to use IAM Roles or AWS_SECRET_ACCESS_KEY environment variable (see: https://github.com/boto/boto#getting-started-with-boto)
+* kinesis_aws_region: Default ``us-east-1``. AWS Region
+* kinesis_aws_stream: Optional. Defaults ``None``. Name of the Kinesis stream to ship logs to
+* kinesis_aws_batch_size_max: Default ``512000``. Arbitrary flush size to limit size of logs in transit.
 * tcp_host: Default ``127.0.0.1``. TCP Host
 * tcp_port: Default ``9999``. TCP Port
+* tcp_ssl Defaults ``0``. Connect using SSL/TLS
+* tcp_ssl_key Optional. Defaults ``None``. Path to client private key for SSL/TLS
+* tcp_ssl_cert Optional. Defaults ``None``. Path to client certificate for SSL/TLS
+* tcp_ssl_cacert Optional. Defaults ``None``. Path to CA certificate for SSL/TLS
 * udp_host: Default ``127.0.0.1``. UDP Host
 * udp_port: Default ``9999``. UDP Port
 * zeromq_address: Default ``tcp://localhost:2120``. Zeromq URL
 * zeromq_hwm: Default None. Zeromq HighWaterMark socket option
 * zeromq_bind: Default ``bind``. Whether to bind to zeromq host or simply connect
 * http_url: Default ``None`` http://someserver.com/path
-* kafka_host: Default ``127.0.0.1``.
-* kafka_port: ``9092``.
-* kafka_async: ``0``. Turn off async mode
-* kafka_delivery_mode: Default ``ack_after_local_write``.
-* kafka_ack_timeout: Default ``2000``.
-* kafka_batch_send: Default ``1``.
-* kafka_batch_send_every_n: Default ``60``.
-* kafka_batch_send_every_t: Default ``60``.
+* stomp_host: Default ``localhost``
+* stomp_port: Default ``61613``
+* stomp_user: Default ``None``
+* stomp_password: Default ``None``
+* stomp_queue: Default ``queue/logstash``
 
 
 The following are used for instances when a TransportException is thrown - Transport dependent
 
 * respawn_delay: Default ``3``. Initial respawn delay for exponential backoff
 * max_failure: Default ``7``. Max failures before exponential backoff terminates
+* max_queue_size: Default ``100``. Max log entries Beaver can store in it's queue before backing off until they have been transmitted
 
 The following configuration keys are for SinceDB support. Specifying these will enable saving the current line number in an sqlite database. This is useful for cases where you may be restarting the Beaver process, such as during a logrotate.
 
@@ -117,7 +143,7 @@ The following configuration keys are for multi-line events support and are per f
 
 The following can also be passed via argparse. Argparse will override all options in the configfile, when specified.
 
-* format: Default ``json``. Options ``[ json, msgpack, string ]``. Format to use when sending to transport
+* format: Default ``json``. Options ``[ json, msgpack, string, raw, rawjson, gelf ]``. Format to use when sending to transport
 * files: Default ``files``. Space-separated list of files to tail. (Comma separated if specified in the config file)
 * path: Default ``/var/log``. Path glob to tail.
 * transport: Default ``stdout``. Transport to use when log changes are detected
@@ -244,6 +270,15 @@ Sending logs from /var/log files to a redis list::
     # From the commandline
     beaver  -c /etc/beaver/conf -t redis
 
+Sending logs from /var/log files to multiple redis servers using round robin strategy::
+
+    # /etc/beaver/conf
+    [beaver]
+    redis_url: redis://broker01:6379/0,redis://broker02:6379/0,redis://broker03:6379/0
+
+    # From the commandline
+    beaver  -c /etc/beaver/conf -t redis
+
 Sending logs from /tmp/somefile files to a redis list, with custom namespace::
 
     # /etc/beaver/conf
@@ -302,17 +337,29 @@ Zeromq connecting to remote port 5556 on indexer::
 Real-world usage of Redis as a transport::
 
     # in /etc/hosts
-    192.168.0.10 redis-internal
+    192.168.0.10 redis-internal01
+    192.168.0.11 redis-internal02
 
     # /etc/beaver/conf
     [beaver]
-    redis_url: redis://redis-internal:6379/0
+    redis_url: redis://redis-internal01:6379/0,redis://redis-internal02:6379/0
     redis_namespace: app:unmappable
 
-    # logstash indexer config:
+    # logstash indexer01 config:
     input {
       redis {
-        host => 'redis-internal'
+        host => 'redis-internal01'
+        data_type => 'list'
+        key => 'app:unmappable'
+        type => 'app:unmappable'
+      }
+    }
+    output { stdout { debug => true } }
+
+    # logstash indexer02 config:
+    input {
+      redis {
+        host => 'redis-internal02'
         data_type => 'list'
         key => 'app:unmappable'
         type => 'app:unmappable'
@@ -345,6 +392,41 @@ RabbitMQ connecting to defaults on remote broker::
 
     # From the commandline
     beaver -c /etc/beaver/conf -t rabbitmq
+
+Kafka transport::
+
+    # /etc/beaver/conf
+    [beaver]
+    kafka_client_id: beaver-kafka-1
+    kafka_hosts: kafkahost1:9092,kafkahost2:9092
+    kafka_key: logstash
+    kafka_topic: mylogs-topic
+    kafka_batch_n: 10
+    kafka_batch_t: 10
+
+    # logstash indexer config:
+    input {
+      kafka {
+        zk_connect => 'zk1:2181' # string (optional), default: "localhost:2181"
+        group_id => 'logstash' # string (optional), default: "logstash"
+        topic_id => 'mylogs-topic' # string (optional), default: "test"
+        reset_beginning => false # boolean (optional), default: false
+        consumer_threads => 25 # number (optional), default: 1
+        queue_size => 20 # number (optional), default: 20
+        rebalance_max_retries => 4 # number (optional), default: 4
+        rebalance_backoff_ms => 2000 # number (optional), default:  2000
+        consumer_timeout_ms => -1 # number (optional), default: -1
+        consumer_restart_on_error => true # boolean (optional), default: true
+        consumer_restart_sleep_ms => 0 # number (optional), default: 0
+        decorate_events => false # boolean (optional), default: false
+        consumer_id => 'logstash-kafka-1' # string (optional) default: nil
+        fetch_message_max_bytes => 1048576 # number (optional) default: 1048576
+      }
+    }
+    output { stdout { debug => true } }
+
+    # From the commandline
+    beaver -c /etc/beaver/conf -t kafka
 
 TCP transport::
 
@@ -386,12 +468,37 @@ UDP transport::
     # From the commandline
     beaver -c /etc/beaver/conf -t udp
 
+SNS Transport::
+
+    # /etc/beaver/conf
+    [beaver]
+    sns_aws_region: us-east-1
+    sns_aws_topic_arn: arn:aws:sns:us-east-1:123456789123:logstash-topic
+    sns_aws_access_key: <access_key>
+    sns_aws_secret_key: <secret_key>
+    sns_aws_profile_name: <proflie_name>
+
+    # logstash indexer config:
+    input {
+      sqs {
+        queue => "sns-subscriber"
+        type => "shipper-input"
+        format => "json_event"
+        access_key => "<access_key>"
+        secret_key => "<secret_key>"
+      }
+    }
+    output { stdout { debug => true } }
+
+    # From the commandline
+    beaver -c /etc/beaver/conf -t sns
+
 SQS Transport::
 
     # /etc/beaver/conf
     [beaver]
     sqs_aws_region: us-east-1
-    sqs_aws_queue: logstash-input
+    sqs_aws_queue: logstash-input1,logstash-input2
     sqs_aws_access_key: <access_key>
     sqs_aws_secret_key: <secret_key>
 
@@ -410,7 +517,21 @@ SQS Transport::
     # From the commandline
     beaver -c /etc/beaver/conf -t sqs
 
-Mqtt transport using Mosquitto::
+Kinesis Transport::
+
+    # /etc/beaver/conf
+    [beaver]
+    kinesis_aws_region: us-east-1
+    kinesis_aws_stream: logstash-stream
+    kinesis_aws_access_key: <access_key>
+    kinesis_aws_secret_key: <secret_key>
+
+    # ingest process (not via Logstash): https://github.com/awslabs/amazon-kinesis-connectors
+
+    # From the commandline
+    beaver -c /etc/beaver/conf -t kinesis
+
+Mqtt transport using Paho::
 
     # /etc/beaver/conf
     [beaver]
@@ -434,22 +555,58 @@ Mqtt transport using Mosquitto::
     # From the commandline
     beaver -c /etc/beaver/conf -f /var/log/unmappable.log -t mqtt
 
-HTTP transport::
-    The HTTP transport simply posts the payload data for a log event to the url specified here.
-    You can use this to post directly to elastic search, for example by creating an index and posting json to the index URL:
-    Assuming an elastic search instance running on your localhost: 
-    Create a 'logs' index:
+HTTP transport
+
+The HTTP transport simply posts the payload data for a log event to the url specified here.
+You can use this to post directly to elastic search, for example by creating an index and posting json to the index URL::
+
+    # Assuming an elastic search instance running on your localhost, 
+    # create a 'logs' index:
     curl -XPUT 'http://localhost:9200/logs/'
 
-    A beaver config to post directly to elastic search: 
+    # A beaver config to post directly to elastic search: 
     # /etc/beaver/conf
     [beaver]
     format: json
     logstash_version: 1
     http_url: http://localhost:9200/logs/log
     
-    #from the commandline
+    # From the commandline
     beaver -c /etc/beaver/conf -F json -f /var/log/somefile -t http
+    
+GELF using HTTP transport
+
+To ship logs directly to a Graylog server, start with this configuration::
+
+    # /etc/beaver/conf, GELF HTTP input on port 12200
+    [beaver]
+    http_url: 'http://graylog.example.com:12200/gelf'
+
+    # From the commandline
+    beaver -c /etc/beaver/conf -f /var/log/somefile -t http -F gelf
+
+Stomp transport using Stomp.py::
+
+    # /etc/beaver/conf
+    [beaver]
+    stomp_host: 'localhost'
+    stomp_port: '61613'
+    stomp_user: 'producer-user'
+    stomp_password : 'password'
+    stomp_queue : 'queue/logstash'
+
+    # logstash indexer config:
+    stomp {
+        user => "consumer-user"
+        password => "consumer-password"
+        destination => "logstash"
+        host => "localhost"
+        port => "61613"
+    }
+    output { stdout { debug => true } }
+
+    # From the commandline
+    beaver -c /etc/beaver/conf -f /var/log/somefile.log -t stomp
     
 Sincedb support using Sqlite3
 *****************************
@@ -577,5 +734,3 @@ Sample of data from add_field::
 
 Sample of data from add_field_env::
     myKey => "myValue"
-
-

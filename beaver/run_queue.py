@@ -8,6 +8,7 @@ from beaver.transports import create_transport
 from beaver.transports.exception import TransportException
 from unicode_dammit import unicode_dammit
 
+
 class ChkPtMgr:
     def __init__(self, beaver_config):
         self._file_chkpt = dict()
@@ -29,7 +30,6 @@ class ChkPtMgr:
             self._file_chkpt[filename] = (new_update_time, sincedb_write_interval)
 
 
-
 def run_queue(queue, beaver_config, logger=None):
     signal.signal(signal.SIGTERM, signal.SIG_DFL)
     signal.signal(signal.SIGINT, signal.SIG_DFL)
@@ -41,6 +41,7 @@ def run_queue(queue, beaver_config, logger=None):
     last_update_time = int(time.time())
     queue_timeout = beaver_config.get('queue_timeout')
     wait_timeout = beaver_config.get('wait_timeout')
+    count = 0
 
     transport = None
     try:
@@ -53,18 +54,29 @@ def run_queue(queue, beaver_config, logger=None):
                 logger.info('Transport connection issues, stopping queue')
                 break
 
-            if int(time.time()) - last_update_time > queue_timeout:
-                logger.info('Queue timeout of "{0}" seconds exceeded, stopping queue'.format(queue_timeout))
-                break
-
+            command = None
             try:
+                if queue.full():
+                    logger.error("Queue is full")
+
+                else:
+                    if count == 1000:
+                        logger.debug("Main consumer queue Size is: " + str(queue.qsize()))
+                        count = 0
                 command, data = queue.get(block=True, timeout=wait_timeout)
                 if command == "callback":
                     last_update_time = int(time.time())
                     logger.debug('Last update time now {0}'.format(last_update_time))
             except Queue.Empty:
-                logger.debug('No data')
-                continue
+                if not queue.empty():
+                    logger.error('Recieved timeout from main consumer queue - stopping queue')
+                    break
+                else:
+                    logger.debug('No data')
+
+            if int(time.time()) - last_update_time > queue_timeout:
+                logger.info('Queue timeout of "{0}" seconds exceeded, stopping queue'.format(queue_timeout))
+                break
 
             if command == 'callback':
                 if data.get('ignore_empty', False):
@@ -86,18 +98,21 @@ def run_queue(queue, beaver_config, logger=None):
                     try:
                         transport.callback(**data)
                         # sync in sincedb
-                        if data.get('filename') and data.get('offset') and chkpt_mgr.need_do_checkpoint(data['filename'], last_update_time):
-                            transport.checkpoint(data['filename'], data['offset'])
+                        if data.get('filename') and data.get('lines') and chkpt_mgr.need_do_checkpoint(data['filename'], last_update_time):
+                            transport.checkpoint(data['filename'], data['lines'])
                             chkpt_mgr.update_checkpoint_time(data['filename'], last_update_time)
-                            logger.info('Write checkpoint({file}, {offset}) into sincedb'.format(file=data['filename'], offset=data['offset']))
+                            logger.info('Write checkpoint({file}, {lines}) into sincedb'.format(file=data['filename'], lines=data['lines']))
+                        count += 1
+                        logger.debug("Number of transports: " + str(count))
                         break
-                    except TransportException:
+                    except TransportException as e:
                         failure_count = failure_count + 1
                         if failure_count > beaver_config.get('max_failure'):
                             failure_count = beaver_config.get('max_failure')
 
                         sleep_time = beaver_config.get('respawn_delay') ** failure_count
-                        logger.info('Caught transport exception, reconnecting in %d seconds' % sleep_time)
+                        logger.info('Caught transport exception: %s', e)
+                        logger.info('Reconnecting in %d seconds' % sleep_time)
 
                         try:
                             transport.invalidate()

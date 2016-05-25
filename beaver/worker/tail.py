@@ -11,6 +11,7 @@ import time
 from beaver.utils import IS_GZIPPED_FILE, REOPEN_FILES, multiline_merge
 from beaver.unicode_dammit import ENCODINGS
 from beaver.base_log import BaseLog
+from beaver.sincedb_manager import SinceDBManager
 
 
 class Tail(BaseLog):
@@ -32,6 +33,7 @@ class Tail(BaseLog):
         self._log_template = '[' + self._filename + '] - {0}'
 
         self._sincedb_path = beaver_config.get('sincedb_path')
+        self._sincedb_manager = SinceDBManager(self._sincedb_path, logger)
 
         self._debug = beaver_config.get_field('debug', filename)  # TODO: Implement me
         self._encoding = beaver_config.get_field('encoding', filename)
@@ -376,23 +378,6 @@ class Tail(BaseLog):
 
         return line_count, encoded
 
-    def _sincedb_init(self):
-        """Initializes the sincedb schema in an sqlite db"""
-        if not self._sincedb_path:
-            return
-
-        if not os.path.exists(self._sincedb_path):
-            self._log_debug('initializing sincedb sqlite schema')
-            conn = sqlite3.connect(self._sincedb_path, isolation_level=None)
-            conn.execute("""
-            create table sincedb (
-                fid      text primary key,
-                filename text,
-                position integer default 1
-            );
-            """)
-            conn.close()
-
     def _sincedb_update_position(self, lines=0, force_update=False):
         """Retrieves the starting position from the sincedb sql db for a given file
         Returns a boolean representing whether or not it updated the record
@@ -412,53 +397,18 @@ class Tail(BaseLog):
             if old_count == lines:
                 return False
 
-        self._sincedb_init()
+        # self._sincedb_manager.sincedb_init()
 
         self._last_sincedb_write = current_time
 
-        self._log_debug('updating sincedb to {0}'.format(lines))
-
-        conn = sqlite3.connect(self._sincedb_path, isolation_level=None)
-        cursor = conn.cursor()
-        query = 'insert or ignore into sincedb (fid, filename) values (:fid, :filename);'
-        cursor.execute(query, {
-            'fid': self._fid,
-            'filename': self._filename
-        })
-
-        query = 'update sincedb set position = :position where fid = :fid and filename = :filename'
-        cursor.execute(query, {
-            'fid': self._fid,
-            'filename': self._filename,
-            'position': lines,
-        })
-        conn.close()
+        # self._sincedb_manager.sincedb_update_position(self._filename, self._fid, lines)
 
         self._line_count_sincedb = lines
 
         return True
 
     def _sincedb_start_position(self):
-        """Retrieves the starting position from the sincedb sql db
-        for a given file
-        """
-        if not self._sincedb_path:
-            return None
-
-        self._sincedb_init()
-        self._log_debug('retrieving start_position from sincedb')
-        conn = sqlite3.connect(self._sincedb_path, isolation_level=None)
-        cursor = conn.cursor()
-        cursor.execute('select position from sincedb where fid = :fid and filename = :filename', {
-            'fid': self._fid,
-            'filename': self._filename
-        })
-
-        start_position = None
-        for row in cursor.fetchall():
-            start_position, = row
-
-        return start_position
+        return self._sincedb_manager.sincedb_start_position(self._filename, self._fid)
 
     def _update_file(self, seek_to_end=True):
         """Open the file for tailing"""

@@ -36,7 +36,13 @@ class SinceDBManager:
             return False
 
         if not fid:
-            fid = self.get_file_id(os.stat(filename))
+            try:
+                st = os.stat(filename)
+            except EnvironmentError, err:
+                if err.errno == errno.ENOENT:
+                    self._logger.info('file removed')
+                    return False
+            fid = self.get_file_id(st)
 
         self.sincedb_init()
 
@@ -65,7 +71,7 @@ class SinceDBManager:
         return "%xg%x" % (st.st_dev, st.st_ino)
 
 
-    def sincedb_start_position(self, file, fid=None):
+    def sincedb_start_position(self, filename, fid=None):
         """Retrieves the starting position from the sincedb sql db
         for a given file
         """
@@ -73,9 +79,16 @@ class SinceDBManager:
             return None
 
         if not fid:
-            fid = self.get_file_id(os.stat(file.name))
+            try:
+                st = os.stat(filename)
+            except EnvironmentError, err:
+                if err.errno == errno.ENOENT:
+                    self._logger.info('file removed')
+                    return None
+            fid = self.get_file_id(st)
 
         self.sincedb_init()
+        self._logger.debug('retrieving start_position from sincedb')
         conn = sqlite3.connect(self._sincedb_path, isolation_level=None)
         cursor = conn.cursor()
         cursor.execute("select position from sincedb where fid = :fid and filename = :filename", {
